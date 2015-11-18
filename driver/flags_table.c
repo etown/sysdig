@@ -76,7 +76,17 @@ const struct ppm_name_value file_flags[] = {
 	{"O_RDWR", PPM_O_RDWR},
 	{"O_WRONLY", PPM_O_WRONLY},
 	{"O_RDONLY", PPM_O_RDONLY},
+	{"O_CLOEXEC", PPM_O_CLOEXEC},
 	{"O_NONE", PPM_O_NONE},
+	{ },
+};
+
+const struct ppm_name_value flock_flags[] = {
+	{"LOCK_SH", PPM_LOCK_SH},
+	{"LOCK_EX", PPM_LOCK_EX},
+	{"LOCK_NB", PPM_LOCK_NB},
+	{"LOCK_UN", PPM_LOCK_UN},
+	{"LOCK_NONE", PPM_LOCK_NONE},
 	{ },
 };
 
@@ -100,6 +110,7 @@ const struct ppm_name_value clone_flags[] = {
 	{"CLONE_INVERTED", PPM_CL_CLONE_INVERTED},
 	{"NAME_CHANGED", PPM_CL_NAME_CHANGED},
 	{"CLOSED", PPM_CL_CLOSED},
+	{"CLONE_NEWUSER", PPM_CL_CLONE_NEWUSER},
 	{ },
 };
 
@@ -134,6 +145,48 @@ const struct ppm_name_value poll_flags[] = {
 	{"POLLRDBAND", PPM_POLLRDBAND},
 	{"POLLWRNORM", PPM_POLLWRNORM},
 	{"POLLWRBAND", PPM_POLLWRBAND},
+	{ },
+};
+
+/* http://lxr.free-electrons.com/source/include/uapi/linux/fs.h?v=4.2#L65 */
+const struct ppm_name_value mount_flags[] = {
+	{"RDONLY", PPM_MS_RDONLY},
+	{"NOSUID", PPM_MS_NOSUID},
+	{"NODEV", PPM_MS_NODEV},
+	{"NOEXEC", PPM_MS_NOEXEC},
+	{"SYNCHRONOUS", PPM_MS_SYNCHRONOUS},
+	{"REMOUNT", PPM_MS_REMOUNT},
+	{"MANDLOCK", PPM_MS_MANDLOCK},
+	{"DIRSYNC", PPM_MS_DIRSYNC},
+	{"NOATIME", PPM_MS_NOATIME},
+	{"NODIRATIME", PPM_MS_NODIRATIME},
+	{"BIND", PPM_MS_BIND},
+	{"MOVE", PPM_MS_MOVE},
+	{"REC", PPM_MS_REC},
+	{"SILENT", PPM_MS_SILENT},
+	{"POSIXACL", PPM_MS_POSIXACL},
+	{"UNBINDABLE", PPM_MS_UNBINDABLE},
+	{"PRIVATE", PPM_MS_PRIVATE},
+	{"SLAVE", PPM_MS_SLAVE},
+	{"SHARED", PPM_MS_SHARED},
+	{"RELATIME", PPM_MS_RELATIME},
+	{"KERNMOUNT", PPM_MS_KERNMOUNT},
+	{"I_VERSION", PPM_MS_I_VERSION},
+	{"STRICTATIME", PPM_MS_STRICTATIME},
+	{"LAZYTIME", PPM_MS_LAZYTIME},
+	{"NOSEC", PPM_MS_NOSEC},
+	{"BORN", PPM_MS_BORN},
+	{"ACTIVE", PPM_MS_ACTIVE},
+	{"NOUSER", PPM_MS_NOUSER},
+	{ },
+};
+
+/* http://lxr.free-electrons.com/source/include/linux/fs.h?v=4.2#L1251 */
+const struct ppm_name_value umount_flags[] = {
+	{"FORCE", PPM_MNT_FORCE},
+	{"DETACH", PPM_MNT_DETACH},
+	{"EXPIRE", PPM_MNT_EXPIRE},
+	{"NOFOLLOW", PPM_UMOUNT_NOFOLLOW},
 	{ },
 };
 
@@ -322,4 +375,27 @@ const struct ppm_name_value quotactl_quota_fmts[] = {
 	{"QFMT_VFS_V0", PPM_QFMT_VFS_V0},
 	{"QFMT_VFS_V1", PPM_QFMT_VFS_V1},
 	{ }
+};
+
+const struct ppm_name_value semop_flags[] = {
+	{"IPC_NOWAIT", PPM_IPC_NOWAIT},
+	{"SEM_UNDO", PPM_SEM_UNDO},
+	{ },
+};
+
+const struct ppm_name_value semctl_commands[] = {
+	{"IPC_STAT", PPM_IPC_STAT},
+	{"IPC_SET", PPM_IPC_SET},
+	{"IPC_RMID", PPM_IPC_RMID},
+	{"IPC_INFO", PPM_IPC_INFO},
+	{"SEM_INFO", PPM_SEM_INFO},
+	{"SEM_STAT", PPM_SEM_STAT},
+	{"GETALL", PPM_GETALL},
+	{"GETNCNT", PPM_GETNCNT},
+	{"GETPID", PPM_GETPID},
+	{"GETVAL", PPM_GETVAL},
+	{"GETZCNT", PPM_GETZCNT},
+	{"SETALL", PPM_SETALL},
+	{"SETVAL", PPM_SETVAL},
+	{ },
 };

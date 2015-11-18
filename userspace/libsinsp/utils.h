@@ -52,7 +52,7 @@ public:
 	//
 	//
 	//
-	static bool sockinfo_to_str(sinsp_sockinfo* sinfo, scap_fd_type stype, char* targetbuf, uint32_t targetbuf_size);
+	static bool sockinfo_to_str(sinsp_sockinfo* sinfo, scap_fd_type stype, char* targetbuf, uint32_t targetbuf_size, bool resolve = false);
 
 	//
 	// Concatenate two paths and puts the result in "target".
@@ -76,6 +76,15 @@ public:
 	// Get the list of filtercheck fields
 	//
 	static void get_filtercheck_fields_info(vector<const filter_check_info*>* list);
+
+	static uint64_t get_current_time_ns();
+
+#ifndef _WIN32
+	//
+	// Print the call stack
+	//
+	static void bt(void);
+#endif // _WIN32
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -115,15 +124,27 @@ string sinsp_gethostname();
 ///////////////////////////////////////////////////////////////////////////////
 // tuples to string
 ///////////////////////////////////////////////////////////////////////////////
-string ipv4tuple_to_string(ipv4tuple* tuple);
-string ipv6tuple_to_string(_ipv6tuple* tuple);
-string ipv4serveraddr_to_string(ipv4serverinfo* addr);
-string ipv6serveraddr_to_string(ipv6serverinfo* addr);
+
+// each of these functions uses values in network byte order
+
+string ipv4tuple_to_string(ipv4tuple* tuple, bool resolve);
+string ipv6tuple_to_string(_ipv6tuple* tuple, bool resolve);
+string ipv4serveraddr_to_string(ipv4serverinfo* addr, bool resolve);
+string ipv6serveraddr_to_string(ipv6serverinfo* addr, bool resolve);
+
+// `l4proto` should be of type scap_l4_proto, but since it's an enum sometimes
+// is used as int and we would have to cast
+// `port` must be saved with network byte order
+// `l4proto` could be neither TCP nor UDP, in this case any protocol will be
+//           matched
+string port_to_string(uint16_t port, uint8_t l4proto, bool resolve);
 
 ///////////////////////////////////////////////////////////////////////////////
 // String helpers
 ///////////////////////////////////////////////////////////////////////////////
 vector<string> sinsp_split(const string &s, char delim);
+template<typename It>
+string sinsp_join(It begin, It end, char delim);
 string& ltrim(string &s);
 string& rtrim(string &s);
 string& trim(string &s);

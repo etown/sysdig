@@ -21,14 +21,26 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 
 /* To know about __NR_socketcall */
 #include <asm/unistd.h>
+#ifdef CONFIG_COMPAT
+#include <linux/compat.h>
+#endif
+
+#ifdef __NR_socketcall
+	#define _HAS_SOCKETCALL
+#endif
+#if defined(CONFIG_X86_64) && defined(CONFIG_IA32_EMULATION)
+	#define _HAS_SOCKETCALL
+#endif
 
 /*
  * Various crap that a callback might need
  */
 struct event_filler_arguments {
+	struct ppm_consumer_t *consumer;
 	char *buffer; /* the buffer that will be filled with the data */
 	u32 buffer_size; /* the space in the ring buffer available for this event */
 	u32 syscall_id; /* the system call ID */
+	const enum ppm_syscall_code *cur_g_syscall_code_routing_table;
 #ifdef PPM_ENABLE_SENTINEL
 	u32 sentinel;
 #endif
@@ -42,11 +54,15 @@ struct event_filler_arguments {
 	struct task_struct *sched_prev; /* for context switch events, the task that is being schduled out */
 	struct task_struct *sched_next; /* for context switch events, the task that is being schduled in */
 	char *str_storage; /* String storage. Size is one page. */
-#ifdef __NR_socketcall
 	unsigned long socketcall_args[6];
-#endif
+	bool is_socketcall;
+	int socketcall_syscall;
+	bool compat;
 	int fd; /* Passed by some of the fillers to val_to_ring to compute the snaplen dynamically */
 	bool enforce_snaplen;
+	int signo; /* Signal number */
+	__kernel_pid_t spid; /* PID of source process */
+	__kernel_pid_t dpid; /* PID of destination process */
 };
 
 /*
@@ -92,6 +108,7 @@ extern const struct ppm_event_entry g_ppm_events[];
 #define PRB_FLAG_PUSH_SIZE	1
 #define PRB_FLAG_PUSH_DATA	2
 #define PRB_FLAG_PUSH_ALL	(PRB_FLAG_PUSH_SIZE | PRB_FLAG_PUSH_DATA)
+#define PRB_FLAG_IS_WRITE	4
 
 /*
  * HTTP markers
@@ -117,6 +134,10 @@ u16 pack_addr(struct sockaddr *usrsockaddr, int ulen, char *targetbuf, u16 targe
 u16 fd_to_socktuple(int fd, struct sockaddr *usrsockaddr, int ulen, bool use_userdata, bool is_inbound, char *targetbuf, u16 targetbufsize);
 int addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr *kaddr);
 int32_t parse_readv_writev_bufs(struct event_filler_arguments *args, const struct iovec __user *iovsrc, unsigned long iovcnt, int64_t retval, int flags);
+
+#ifdef CONFIG_COMPAT
+int32_t compat_parse_readv_writev_bufs(struct event_filler_arguments *args, const struct compat_iovec __user *iovsrc, unsigned long iovcnt, int64_t retval, int flags);
+#endif
 
 static inline int add_sentinel(struct event_filler_arguments *args)
 {

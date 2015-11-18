@@ -42,7 +42,7 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 #ifdef _WIN32
-#pragma warning(disable: 4251)
+#pragma warning(disable: 4251 4200)
 #endif
 
 #ifdef _WIN32
@@ -72,7 +72,8 @@ using namespace std;
 #include "dumper.h"
 #include "stats.h"
 #include "ifinfo.h"
-#include "chisel.h"
+#include "container.h"
+#include "viewinfo.h"
 
 #ifndef VISIBILITY_PRIVATE
 #define VISIBILITY_PRIVATE private:
@@ -104,8 +105,19 @@ class sinsp_analyzer;
 class sinsp_filter;
 class cycle_writer;
 class sinsp_protodecoder;
+class k8s;
 
 vector<string> sinsp_split(const string &s, char delim);
+
+/*!
+  \brief Information about a chisel
+*/
+class sinsp_chisel_details
+{
+public:
+	string m_name;
+	vector<pair<string, string>> m_args;
+};
 
 /*!
   \brief Information about a group of filter/formatting fields.
@@ -117,6 +129,7 @@ public:
 	{
 		FL_NONE =   0,
 		FL_WORKS_ON_THREAD_TABLE = (1 << 0),	///< This filter check class supports filtering incomplete events that contain only valid thread info and FD info.
+		FL_HIDDEN = (1 << 1),	///< This filter check class won't be shown by stuff like the -l sysdig command line switch.
 	};
 
 	filter_check_info()
@@ -125,8 +138,8 @@ public:
 	}
 
 	string m_name; ///< Field class name.
-	int32_t m_nfiedls; ///< Number of fields in this field group.
-	const filtercheck_field_info* m_fields; ///< Array containing m_nfiedls field descriptions.
+	int32_t m_nfields; ///< Number of fields in this field group.
+	const filtercheck_field_info* m_fields; ///< Array containing m_nfields field descriptions.
 	uint32_t m_flags;
 };
 
@@ -166,8 +179,23 @@ struct sinsp_capture_interrupt_exception : sinsp_exception
 /*!
   \brief The deafult way an event is converted to string by the library
 */
-//#define DEFAULT_OUTPUT_STR "*%evt.num %evt.time %evt.cpu %proc.name (%thread.tid) %evt.dir %evt.type %evt.args"
-#define DEFAULT_OUTPUT_STR "*%evt.time %evt.cpu %proc.name (%thread.tid) %evt.dir %evt.type %evt.args"
+#define DEFAULT_OUTPUT_STR "*%evt.num %evt.time %evt.cpu %proc.name (%thread.tid) %evt.dir %evt.type %evt.args"
+
+//
+// Internal stuff for meta event management
+//
+typedef void (*meta_event_callback)(sinsp*, void* data);
+class sinsp_proc_metainfo
+{
+public:
+	sinsp_evt m_pievt;
+	scap_evt* m_piscapevt;
+	uint64_t* m_piscapevt_vals;
+	uint64_t m_n_procinfo_evts;
+	int64_t m_cur_procinfo_evt;
+	ppm_proclist_info* m_pli;
+	sinsp_evt* m_next_evt;
+};
 
 /** @defgroup inspector Main library
  @{
@@ -319,6 +347,16 @@ public:
 	  \param cb the target function that will receive the log messages.
 	*/
 	void set_log_callback(sinsp_logger_callback cb);
+
+	/*!
+	  \brief Instruct sinsp to write its log messages to the given file.
+	*/
+	void set_log_file(string filename);
+
+	/*!
+	  \brief Instruct sinsp to write its log messages to stderr.
+	*/
+	void set_log_stderr();
 
 	/*!
 	  \brief Specify the minimum severity of the messages that go into the logs
@@ -502,7 +540,10 @@ public:
 	/*!
 	  \brief Returns true if the current capture is live.
 	*/
-	bool is_live();
+	inline bool is_live()
+	{
+		return m_islive;		
+	}
 
 	/*!
 	  \brief Set the debugging mode of the inspector.
@@ -522,7 +563,32 @@ public:
 	void set_fatfile_dump_mode(bool enable_fatfile);
 
 	/*!
-	  \brief sets the max length of event argument strings. 
+	  \brief Set whether Sysdig should resolve hostnames and port protocols or not.
+
+	  \note Sysdig can use the system library functions getservbyport and so to
+	   resolve protocol names and domain names.
+	  
+	  \param enable If set to false it will enable this function and use plain
+	   numerical values.
+	*/
+	void set_hostname_and_port_resolution_mode(bool enable);
+
+	/*!
+	  \brief Set the runtime flag for resolving the timespan in a human
+	   readable mode.
+
+	  \note Moved to the inspector due to sysdig#426 issue
+
+	  \param flag Can be 'h', 'a', 'r', 'd', 'D' as documented in the manual.
+	*/
+	inline void set_time_output_mode(char flag)
+	{
+		m_output_time_flag = flag;
+	}
+
+	/*!
+	  \brief Sets the max length of event argument strings. 
+
 	  \param len Max length after which an avent argument string is truncated.
 	   0 means no limit. Use this to reduce verbosity when printing event info
 	   on screen.
@@ -535,6 +601,22 @@ public:
 	inline bool is_debug_enabled()
 	{
 		return m_isdebug_enabled;		
+	}
+
+        /*!
+          \brief Set a flag indicating if the command line requested to show container information.
+
+          \param set true if the command line arugment is set to show container information 
+        */
+        void set_print_container_data(bool print_container_data);
+
+
+	/*!
+	  \brief Returns true if the command line argument is set to show container information.
+	*/
+	inline bool is_print_container_data()
+	{
+		return m_print_container_data;
 	}
 
 	/*!
@@ -561,9 +643,12 @@ public:
 	}
 
 	/*!
-	  \brief XXX.
+	  \brief When reading events from a trace file, this function returns the
+	   read progress as a number between 0 and 100.
 	*/
 	double get_read_progress();
+
+	void init_k8s_client(const string& api_server);
 
 	//
 	// Misc internal stuff
@@ -572,6 +657,10 @@ public:
 	void start_dropping_mode(uint32_t sampling_ratio);
 	void on_new_entry_from_proc(void* context, int64_t tid, scap_threadinfo* tinfo, 
 		scap_fdinfo* fdinfo, scap_t* newhandle);
+	void set_get_procs_cpu_from_driver(bool get_procs_cpu_from_driver)
+	{
+		m_get_procs_cpu_from_driver = get_procs_cpu_from_driver;
+	}
 
 	//
 	// Allocates private state in the thread info class.
@@ -582,8 +671,12 @@ public:
 
 	sinsp_parser* get_parser();
 
-	bool setup_cycle_writer(string base_file_name, int rollover_mb, int duration_seconds, int file_limit, bool do_cycle, bool compress);
+	bool setup_cycle_writer(string base_file_name, int rollover_mb, int duration_seconds, int file_limit, unsigned long event_limit, bool compress);
 	void import_ipv4_interface(const sinsp_ipv4_ifinfo& ifinfo);
+	void add_meta_event(sinsp_evt *metaevt);
+	void add_meta_event_and_repeat(sinsp_evt *metaevt);
+
+	void refresh_ifaddr_list();
 
 VISIBILITY_PRIVATE
 
@@ -610,13 +703,17 @@ private:
 	// this is here for testing purposes only
 	sinsp_threadinfo* find_thread_test(int64_t tid, bool lookup_only);
 	bool remove_inactive_threads();
+	void update_kubernetes_state();
 
 	scap_t* m_h;
+	uint32_t m_nevts;
 	int64_t m_filesize;
 	bool m_islive;
 	string m_input_filename;
 	bool m_isdebug_enabled;
 	bool m_isfatfile_enabled;
+	bool m_hostname_and_port_resolution_enabled;
+	char m_output_time_flag;
 	uint32_t m_max_evt_output_len;
 	bool m_compress;
 	sinsp_evt m_evt;
@@ -637,6 +734,21 @@ private:
 
 	sinsp_thread_manager* m_thread_manager;
 
+	sinsp_container_manager m_container_manager;
+
+	//
+	// Kubernetes stuff
+	//
+	string m_k8s_api_server;
+	k8s* m_k8s_client;
+	uint64_t m_k8s_last_watch_time_ns;
+
+	//
+	// True if the command line argument is set to show container information
+	// The deafult is false set within the constructor
+	//
+	bool m_print_container_data;
+
 #ifdef HAS_FILTERING
 	uint64_t m_firstevent_ts;
 	sinsp_filter* m_filter;
@@ -650,6 +762,7 @@ private:
 	sinsp_stats m_stats;
 #endif
 	uint32_t m_n_proc_lookups;
+	uint64_t m_n_proc_lookups_duration_ns;
 	uint32_t m_max_n_proc_lookups;
 	uint32_t m_max_n_proc_socket_lookups;
 #ifdef HAS_ANALYZER
@@ -665,8 +778,14 @@ private:
 	// Some thread table limits
 	//
 	uint32_t m_max_thread_table_size;
+	uint32_t m_max_fdtable_size;
 	uint64_t m_thread_timeout_ns;
 	uint64_t m_inactive_thread_scan_time_ns;
+
+	//
+	// Container limits
+	//
+	uint64_t m_inactive_container_scan_time_ns;
 
 	//
 	// How to render the data buffers
@@ -698,6 +817,28 @@ private:
 	//
 	vector<sinsp_protodecoder*> m_decoders_reset_list;
 
+	//
+	// Meta event management
+	//
+	sinsp_evt m_meta_evt; // XXX this should go away 
+	char* m_meta_evt_buf; // XXX this should go away 
+	bool m_meta_evt_pending; // XXX this should go away 
+	sinsp_evt* m_metaevt;
+	sinsp_evt* m_skipped_evt;
+	meta_event_callback m_meta_event_callback;
+
+	//
+	// End of second housekeeping
+	//
+	bool m_get_procs_cpu_from_driver;
+	uint64_t m_next_flush_time_ns;
+	uint64_t m_last_procrequest_tod;
+	sinsp_proc_metainfo m_meinfo;
+
+#if defined(HAS_CAPTURE)
+	int64_t m_sysdig_pid;
+#endif
+
 	friend class sinsp_parser;
 	friend class sinsp_analyzer;
 	friend class sinsp_analyzer_parsers;
@@ -705,13 +846,35 @@ private:
 	friend class sinsp_threadinfo;
 	friend class sinsp_fdtable;
 	friend class sinsp_thread_manager;
+	friend class sinsp_container_manager;
 	friend class sinsp_dumper;
 	friend class sinsp_analyzer_fd_listener;
 	friend class sinsp_chisel;
 	friend class sinsp_protodecoder;
 	friend class lua_cbacks;
-
+	friend class sinsp_filter_check_container;
+	friend class sinsp_worker;
+	friend class sinsp_table;
+	friend class curses_textbox;
+	friend class sinsp_filter_check_fd;
+	friend class sinsp_filter_check_event;
+	friend class sinsp_filter_check_k8s;
+	
 	template<class TKey,class THash,class TCompare> friend class sinsp_connection_manager;
 };
+
+//
+// Macros for enable/disable k8s threading
+// Used to eliminate mutex locking when running single-threaded
+//
+
+#ifndef K8S_DISABLE_THREAD
+#include <mutex>
+#define K8S_DECLARE_MUTEX mutable std::mutex m_mutex
+#define K8S_LOCK_GUARD_MUTEX std::lock_guard<std::mutex> lock(m_mutex)
+#else
+#define K8S_DECLARE_MUTEX
+#define K8S_LOCK_GUARD_MUTEX
+#endif // K8S_DISABLE_THREAD
 
 /*@}*/

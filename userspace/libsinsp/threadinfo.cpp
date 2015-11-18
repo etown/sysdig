@@ -68,6 +68,8 @@ void sinsp_threadinfo::init()
 	m_vmswap_kb = 0;
 	m_pfmajor = 0;
 	m_pfminor = 0;
+	m_vtid = -1;
+	m_vpid = -1;
 	m_main_thread = NULL;
 	m_lastevent_fd = 0;
 #ifdef HAS_FILTERING
@@ -76,6 +78,7 @@ void sinsp_threadinfo::init()
 #endif
 	m_ainfo = NULL;
 	m_program_hash = 0;
+	m_lastevent_data = NULL;
 }
 
 sinsp_threadinfo::~sinsp_threadinfo()
@@ -119,7 +122,7 @@ void sinsp_threadinfo::fix_sockets_coming_from_proc()
 				it->second.m_sockinfo.m_ipv4info.m_fields.m_sport = it->second.m_sockinfo.m_ipv4info.m_fields.m_dport;
 				it->second.m_sockinfo.m_ipv4info.m_fields.m_dport = tport;
 
-				it->second.m_name = ipv4tuple_to_string(&it->second.m_sockinfo.m_ipv4info);
+				it->second.m_name = ipv4tuple_to_string(&it->second.m_sockinfo.m_ipv4info, m_inspector->m_hostname_and_port_resolution_enabled);
 
 				it->second.set_role_server();
 			}
@@ -135,10 +138,12 @@ void sinsp_threadinfo::compute_program_hash()
 {
 	string phs = m_exe;
 
-	for(string arg : m_args)
+	for(auto arg = m_args.begin(); arg != m_args.end(); ++arg)
 	{
-		phs += arg;
+		phs += *arg;
 	}
+
+	phs += m_container_id;
 
 	m_program_hash = std::hash<std::string>()(phs);
 }
@@ -163,13 +168,13 @@ void sinsp_threadinfo::add_fd(scap_fdinfo *fdi)
 		newfdi.m_sockinfo.m_ipv4info.m_fields.m_dport = fdi->info.ipv4info.dport;
 		newfdi.m_sockinfo.m_ipv4info.m_fields.m_l4proto = fdi->info.ipv4info.l4proto;
 		m_inspector->m_network_interfaces->update_fd(&newfdi);
-		newfdi.m_name = ipv4tuple_to_string(&newfdi.m_sockinfo.m_ipv4info);
+		newfdi.m_name = ipv4tuple_to_string(&newfdi.m_sockinfo.m_ipv4info, m_inspector->m_hostname_and_port_resolution_enabled);
 		break;
 	case SCAP_FD_IPV4_SERVSOCK:
 		newfdi.m_sockinfo.m_ipv4serverinfo.m_ip = fdi->info.ipv4serverinfo.ip;
 		newfdi.m_sockinfo.m_ipv4serverinfo.m_port = fdi->info.ipv4serverinfo.port;
 		newfdi.m_sockinfo.m_ipv4serverinfo.m_l4proto = fdi->info.ipv4serverinfo.l4proto;
-		newfdi.m_name = ipv4serveraddr_to_string(&newfdi.m_sockinfo.m_ipv4serverinfo);
+		newfdi.m_name = ipv4serveraddr_to_string(&newfdi.m_sockinfo.m_ipv4serverinfo, m_inspector->m_hostname_and_port_resolution_enabled);
 			
 		//
 		// We keep note of all the host bound server ports.
@@ -193,7 +198,7 @@ void sinsp_threadinfo::add_fd(scap_fdinfo *fdi)
 			newfdi.m_sockinfo.m_ipv4info.m_fields.m_dport = fdi->info.ipv6info.dport;
 			newfdi.m_sockinfo.m_ipv4info.m_fields.m_l4proto = fdi->info.ipv6info.l4proto;
 			m_inspector->m_network_interfaces->update_fd(&newfdi);
-			newfdi.m_name = ipv4tuple_to_string(&newfdi.m_sockinfo.m_ipv4info);
+			newfdi.m_name = ipv4tuple_to_string(&newfdi.m_sockinfo.m_ipv4info, m_inspector->m_hostname_and_port_resolution_enabled);
 		}
 		else
 		{
@@ -202,14 +207,14 @@ void sinsp_threadinfo::add_fd(scap_fdinfo *fdi)
 			newfdi.m_sockinfo.m_ipv6info.m_fields.m_sport = fdi->info.ipv6info.sport;
 			newfdi.m_sockinfo.m_ipv6info.m_fields.m_dport = fdi->info.ipv6info.dport;
 			newfdi.m_sockinfo.m_ipv6info.m_fields.m_l4proto = fdi->info.ipv6info.l4proto;
-			newfdi.m_name = ipv6tuple_to_string(&newfdi.m_sockinfo.m_ipv6info);
+			newfdi.m_name = ipv6tuple_to_string(&newfdi.m_sockinfo.m_ipv6info, m_inspector->m_hostname_and_port_resolution_enabled);
 		}
 		break;
 	case SCAP_FD_IPV6_SERVSOCK:
 		copy_ipv6_address(newfdi.m_sockinfo.m_ipv6serverinfo.m_ip, fdi->info.ipv6serverinfo.ip);
 		newfdi.m_sockinfo.m_ipv6serverinfo.m_port = fdi->info.ipv6serverinfo.port;
 		newfdi.m_sockinfo.m_ipv6serverinfo.m_l4proto = fdi->info.ipv6serverinfo.l4proto;
-		newfdi.m_name = ipv6serveraddr_to_string(&newfdi.m_sockinfo.m_ipv6serverinfo);
+		newfdi.m_name = ipv6serveraddr_to_string(&newfdi.m_sockinfo.m_ipv6serverinfo, m_inspector->m_hostname_and_port_resolution_enabled);
 
 		//
 		// We keep note of all the host bound server ports.
@@ -297,11 +302,20 @@ void sinsp_threadinfo::init(const scap_threadinfo* pi)
 	m_pfmajor = pi->pfmajor;
 	m_pfminor = pi->pfminor;
 	m_nchilds = 0;
-
+	m_vtid = pi->vtid;
+	m_vpid = pi->vpid;
+	set_cgroups(pi->cgroups, pi->cgroups_len);
+	ASSERT(m_inspector);
+	if(m_inspector)
+	{
+		m_inspector->m_container_manager.resolve_container_from_cgroups(m_cgroups, m_inspector->m_islive, &m_container_id);
+	}
+	
 	HASH_ITER(hh, pi->fdlist, fdi, tfdi)
 	{
 		add_fd(fdi);
 	}
+	m_lastevent_data = NULL;
 }
 
 string sinsp_threadinfo::get_comm()
@@ -338,72 +352,48 @@ void sinsp_threadinfo::set_env(const char* env, size_t len)
 	}
 }
 
-bool sinsp_threadinfo::is_main_thread()
+void sinsp_threadinfo::set_cgroups(const char* cgroups, size_t len)
 {
-	return m_tid == m_pid;
-}
+	m_cgroups.clear();
 
-sinsp_threadinfo* sinsp_threadinfo::get_main_thread()
-{
-	if(m_main_thread == NULL)
+	size_t offset = 0;
+	while(offset < len)
 	{
-		//
-		// Is this a child thread?
-		//
-		if(m_pid == m_tid)
+		const char* str = cgroups + offset;
+		const char* sep = strchr(str, '=');
+		if(sep == NULL)
 		{
-			//
-			// No, this is either a single thread process or the root thread of a
-			// multithread process.
-			// Note: we don't set m_main_thread because there are cases in which this is 
-			//       invoked for a threadinfo that is in the stack. Caching the this pointer
-			//       would cause future mess.
-			//
-			return this;
+			ASSERT(false);
+			return;
 		}
-		else
-		{
-			//
-			// Yes, this is a child thread. Find the process root thread.
-			//
-			sinsp_threadinfo *ptinfo = m_inspector->get_thread(m_pid, true, true);
-			if(NULL == ptinfo)
-			{
-				ASSERT(false);
-				return NULL;
-			}
 
-			m_main_thread = ptinfo;
+		string subsys(str, sep - str);
+		string cgroup(sep + 1);
+
+		size_t subsys_length = subsys.length();
+		size_t pos = subsys.find("_cgroup");
+		if(pos != string::npos)
+		{
+			subsys.erase(pos, sizeof("_cgroup") - 1);
 		}
+
+		if(subsys == "perf")
+		{
+			subsys = "perf_event";
+		}
+		else if(subsys == "mem")
+		{
+			subsys = "memory";
+		}
+
+		m_cgroups.push_back(std::make_pair(subsys, cgroup));
+		offset += subsys_length + 1 + cgroup.length() + 1;
 	}
-
-	return m_main_thread;
 }
 
 sinsp_threadinfo* sinsp_threadinfo::get_parent_thread()
 {
 	return m_inspector->get_thread(m_ptid, false, true);
-}
-
-sinsp_fdtable* sinsp_threadinfo::get_fd_table()
-{
-	sinsp_threadinfo* root;
-
-	if(!(m_flags & PPM_CL_CLONE_FILES))
-	{
-		root = this;
-	}
-	else
-	{
-		root = get_main_thread();
-		if(NULL == root)
-		{
-			ASSERT(false);
-			return NULL;
-		}
-	}
-
-	return &(root->m_fdtable);
 }
 
 sinsp_fdinfo_t* sinsp_threadinfo::add_fd(int64_t fd, sinsp_fdinfo_t *fdinfo)
@@ -421,27 +411,6 @@ sinsp_fdinfo_t* sinsp_threadinfo::add_fd(int64_t fd, sinsp_fdinfo_t *fdinfo)
 void sinsp_threadinfo::remove_fd(int64_t fd)
 {
 	get_fd_table()->erase(fd);
-}
-
-sinsp_fdinfo_t* sinsp_threadinfo::get_fd(int64_t fd)
-{
-	if(fd < 0)
-	{
-		return NULL;
-	}
-
-	sinsp_fdtable* fdt = get_fd_table();
-
-	if(fdt)
-	{
-		return fdt->find(fd);
-	}
-	else
-	{
-		ASSERT(false);
-	}
-
-	return NULL;
 }
 
 bool sinsp_threadinfo::is_bound_to_port(uint16_t number)
@@ -490,28 +459,6 @@ bool sinsp_threadinfo::uses_client_port(uint16_t number)
 	}
 
 	return false;
-}
-
-void sinsp_threadinfo::store_event(sinsp_evt *evt)
-{
-	uint32_t elen;
-
-	//
-	// Make sure the event data is going to fit
-	//
-	elen = scap_event_getlen(evt->m_pevt);
-
-	if(elen > SP_EVT_BUF_SIZE)
-	{
-		ASSERT(false);
-		return;
-	}
-
-	//
-	// Copy the data
-	//
-	memcpy(m_lastevent_data, evt->m_pevt, elen);
-	m_lastevent_cpuid = evt->get_cpuid();
 }
 
 bool sinsp_threadinfo::is_lastevent_data_valid()
@@ -625,6 +572,28 @@ uint64_t sinsp_threadinfo::get_fd_usage_pct()
 	}
 }
 
+double sinsp_threadinfo::get_fd_usage_pct_d()
+{
+	int64_t fdlimit = get_fd_limit();
+	if(fdlimit > 0)
+	{
+		uint64_t fd_opencount = get_fd_opencount();
+		ASSERT(fd_opencount <= (uint64_t) fdlimit);
+		if(fd_opencount <= (uint64_t) fdlimit)
+		{
+			return ((double)fd_opencount * 100) / fdlimit;
+		}
+		else
+		{
+			return 100;
+		}
+	}
+	else
+	{
+		return 0;
+	}
+}
+
 uint64_t sinsp_threadinfo::get_fd_opencount()
 {
 	return get_main_thread()->m_fdtable.size();
@@ -634,6 +603,53 @@ uint64_t sinsp_threadinfo::get_fd_limit()
 {
 	return get_main_thread()->m_fdlimit;
 }
+
+sinsp_threadinfo* sinsp_threadinfo::lookup_thread()
+{
+	return m_inspector->get_thread(m_pid, true, true);
+}
+
+//
+// Note: this is duplicated here because visual studio has trouble inlining
+//       the method.
+//
+#ifdef _WIN32
+sinsp_threadinfo* sinsp_threadinfo::get_main_thread()
+{
+	if (m_main_thread == NULL)
+	{
+		//
+		// Is this a child thread?
+		//
+		if (m_pid == m_tid)
+		{
+			//
+			// No, this is either a single thread process or the root thread of a
+			// multithread process.
+			// Note: we don't set m_main_thread because there are cases in which this is 
+			//       invoked for a threadinfo that is in the stack. Caching the this pointer
+			//       would cause future mess.
+			//
+			return this;
+		}
+		else
+		{
+			//
+			// Yes, this is a child thread. Find the process root thread.
+			//
+			sinsp_threadinfo* ptinfo = lookup_thread();
+			if (NULL == ptinfo)
+			{
+				return NULL;
+			}
+
+			m_main_thread = ptinfo;
+		}
+	}
+
+	return m_main_thread;
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // sinsp_thread_manager implementation
@@ -697,7 +713,8 @@ void sinsp_thread_manager::add_thread(sinsp_threadinfo& threadinfo, bool from_sc
 
 	m_last_tinfo = NULL;
 
-	if(m_threadtable.size() >= m_inspector->m_max_thread_table_size)
+	if(m_threadtable.size() >= m_inspector->m_max_thread_table_size &&
+			threadinfo.m_pid != m_inspector->m_sysdig_pid)
 	{
 		m_n_drops++;
 		return;

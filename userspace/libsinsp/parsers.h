@@ -33,6 +33,8 @@ public:
 	// Processing entry point
 	//
 	void process_event(sinsp_evt* evt);
+	void event_cleanup(sinsp_evt* evt);
+
 	void erase_fd(erase_fd_params* params);
 
 	//
@@ -102,6 +104,8 @@ private:
 	void parse_setresgid_exit(sinsp_evt* evt);
 	void parse_setuid_exit(sinsp_evt* evt);
 	void parse_setgid_exit(sinsp_evt* evt);
+	void parse_container_evt(sinsp_evt* evt);
+	void parse_cpu_hotplug_enter(sinsp_evt* evt);
 
 	inline void add_socket(sinsp_evt* evt, int64_t fd, uint32_t domain, uint32_t type, uint32_t protocol);
 	inline void add_pipe(sinsp_evt *evt, int64_t tid, int64_t fd, uint64_t ino);
@@ -114,15 +118,13 @@ private:
 	// Return false if the update didn't happen because the tuple is identical to the given address
 	bool set_unix_info(sinsp_fdinfo_t* fdinfo, uint8_t* packed_data);
 	void swap_ipv4_addresses(sinsp_fdinfo_t* fdinfo);
+	uint8_t* reserve_event_buffer();
+	void free_event_buffer(uint8_t*);
 
 	//
 	// Pointers to inspector context
 	//
 	sinsp* m_inspector;
-
-#if defined(HAS_CAPTURE)
-	int64_t m_sysdig_pid;
-#endif
 
 	//
 	// Temporary storage to avoid memory allocation
@@ -136,6 +138,7 @@ private:
 	//
 	vector<sinsp_protodecoder*> m_protodecoders;
 
+	stack<uint8_t*> m_tmp_events_buffer;
 	friend class sinsp_analyzer;
 	friend class sinsp_analyzer_fd_listener;
 	friend class sinsp_protodecoder;

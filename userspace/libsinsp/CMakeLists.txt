@@ -3,11 +3,22 @@ include_directories(../../common)
 include_directories(../libscap)
 include_directories("${JSONCPP_INCLUDE}")
 include_directories("${LUAJIT_INCLUDE}")
+include_directories("${B64_INCLUDE}")
+include_directories("${CURL_INCLUDE_DIR}")
+
+if(NOT WIN32)
+	include_directories("${CURSES_INCLUDE_DIR}")
+endif()
 
 add_library(sinsp STATIC
 	chisel.cpp
 	chisel_api.cpp
+	container.cpp
+	ctext.cpp
 	cyclewriter.cpp
+	cursescomponents.cpp
+	cursestable.cpp
+	cursesui.cpp
 	event.cpp
 	eventformatter.cpp
 	dumper.cpp
@@ -15,6 +26,13 @@ add_library(sinsp STATIC
 	filter.cpp
 	filterchecks.cpp
 	ifinfo.cpp
+	k8s.cpp
+	k8s_collector.cpp
+	k8s_component.cpp
+	k8s_dispatcher.cpp
+	k8s_event_data.cpp
+	k8s_http.cpp
+	k8s_net.cpp
 	memmem.cpp
 	internal_metrics.cpp
 	"${JSONCPP_LIB_SRC}"
@@ -24,15 +42,25 @@ add_library(sinsp STATIC
 	threadinfo.cpp
 	sinsp.cpp
 	stats.cpp
-	utils.cpp)
+	table.cpp
+	uri.cpp
+	utils.cpp
+	viewinfo.cpp)
 
 target_link_libraries(sinsp 
 	scap
-	"${JSONCPP_LIB}")
+	"${JSONCPP_LIB}"
+	"${B64_LIB}"
+	"${CURL_LIBRARIES}"
+	"${OPENSSL_LIBRARY_SSL}"
+	"${OPENSSL_LIBRARY_CRYPTO}"
+	pthread)
 
 if(NOT WIN32)
-	add_dependencies(sinsp luajit)
-	
+	if(USE_BUNDLED_LUAJIT)
+		add_dependencies(sinsp luajit)
+	endif()
+
 	target_link_libraries(sinsp
 		"${LUAJIT_LIB}"
 		dl)

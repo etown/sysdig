@@ -53,12 +53,12 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 //
 // Max size that the thread table can reach
 //
-#define MAX_THREAD_TABLE_SIZE 65536
+#define MAX_THREAD_TABLE_SIZE 32768
 
 //
 // Max size that the FD table of a process can reach
 //
-#define MAX_FD_TABLE_SIZE 2048
+#define MAX_FD_TABLE_SIZE 4096
 
 //
 // The time after an inactive thread is removed.
@@ -69,6 +69,11 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 // How often the thread table is sacnned for inactive threads
 //
 #define DEFAULT_INACTIVE_THREAD_SCAN_TIME_S 1200
+
+//
+// How often the thread table is sacnned for inactive threads
+//
+#define DEFAULT_INACTIVE_CONTAINER_SCAN_TIME_S DEFAULT_INACTIVE_THREAD_SCAN_TIME_S
 
 //
 // Enables Lua chisel scripts support
@@ -84,6 +89,15 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 // Default snaplen
 //
 #define DEFAULT_SNAPLEN 80
+
+//
+// Is csysdig functionality included?
+//
+#define CSYSDIG
+
+#ifdef _WIN32
+#define NOCURSESUI
+#endif
 
 //
 // FD class customized with the storage we need

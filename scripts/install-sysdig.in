@@ -35,9 +35,9 @@ function install_rpm {
 		fi
 	fi
 
-	echo "* Installing Draios public key"
+	echo "* Installing Sysdig public key"
 	rpm --quiet --import https://s3.amazonaws.com/download.draios.com/DRAIOS-GPG-KEY.public
-	echo "* Installing Draios repository"
+	echo "* Installing Sysdig repository"
 	curl -s -o /etc/yum.repos.d/draios.repo http://download.draios.com/_REPOSITORY_NAME_/rpm/draios.repo
 	echo "* Installing kernel headers"
 	KERNEL_VERSION=$(uname -r)
@@ -61,9 +61,9 @@ function install_deb {
 		apt-get -qq -y install curl < /dev/null
 	fi
 
-	echo "* Installing Draios public key"
+	echo "* Installing Sysdig public key"
 	curl -s https://s3.amazonaws.com/download.draios.com/DRAIOS-GPG-KEY.public | apt-key add -
-	echo "* Installing Draios repository"
+	echo "* Installing Sysdig repository"
 	curl -s -o /etc/apt/sources.list.d/draios.list http://download.draios.com/_REPOSITORY_NAME_/deb/draios.list
 	apt-get -qq update < /dev/null
 	echo "* Installing kernel headers"
@@ -103,58 +103,78 @@ if [ -f /etc/debian_version ]; then
 	if [ -f /etc/lsb-release ]; then
 		. /etc/lsb-release
 		DISTRO=$DISTRIB_ID
-		VERSION=$DISTRIB_RELEASE
+		VERSION=${DISTRIB_RELEASE%%.*}
 	else
 		DISTRO="Debian"
 		VERSION=$(cat /etc/debian_version | cut -d'.' -f1)
 	fi
 
-	if [ $DISTRO = "Ubuntu" ]; then
-		VERSION=$(echo $VERSION | cut -d'.' -f1)
-		if [ $VERSION -ge 10 ]; then
-			install_deb
-		else
+	case "$DISTRO" in
+
+		"Ubuntu")
+			if [ $VERSION -ge 10 ]; then
+				install_deb
+			else
+				unsupported
+			fi
+			;;
+
+		"LinuxMint")
+			if [ $VERSION -ge 9 ]; then
+				install_deb
+			else
+				unsupported
+			fi
+			;;
+
+		"Debian")
+			if [ $VERSION -ge 6 ]; then
+				install_deb
+			elif [[ $VERSION == *sid* ]]; then
+				install_deb
+			else
+				unsupported
+			fi
+			;;
+
+		*)
 			unsupported
-		fi
-	elif [ $DISTRO = "LinuxMint" ]; then
-		if [ $VERSION -ge 9 ]; then
-			install_deb
-		else
-			unsupported
-		fi
-	elif [ $DISTRO = "Debian" ]; then
-		if [ $VERSION -ge 6 ]; then
-			install_deb
-		elif [[ $VERSION == *sid* ]]; then
-			install_deb
-		else
-			unsupported
-		fi
-	else
-		unsupported
-	fi
+			;;
+
+	esac
 
 elif [ -f /etc/system-release-cpe ]; then
 	DISTRO=$(cat /etc/system-release-cpe | cut -d':' -f3)
 	VERSION=$(cat /etc/system-release-cpe | cut -d':' -f5 | cut -d'.' -f1 | sed 's/[^0-9]*//g')
 
-	if [ $DISTRO = "oracle" ] || [ $DISTRO = "centos" ] || [ $DISTRO = "redhat" ]; then
-		if [ $VERSION -ge 6 ]; then
+	case "$DISTRO" in
+
+		"oracle" | "centos" | "redhat")
+			if [ $VERSION -ge 6 ]; then
+				install_rpm
+			else
+				unsupported
+			fi
+			;;
+
+		"amazon")
 			install_rpm
-		else
+			;;
+
+		"fedoraproject")
+			if [ $VERSION -ge 13 ]; then
+				install_rpm
+			else
+				unsupported
+			fi
+			;;
+
+		*)
 			unsupported
-		fi
-	elif [ $DISTRO = "amazon" ]; then
-		install_rpm
-	elif [ $DISTRO = "fedoraproject" ]; then
-		if [ $VERSION -ge 13 ]; then
-			install_rpm
-		else
-			unsupported
-		fi
-	else
-		unsupported
-	fi
+			;;
+
+	esac
+
 else
 	unsupported
 fi
